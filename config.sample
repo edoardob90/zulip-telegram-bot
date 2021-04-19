@@ -1,0 +1,15 @@
+[log]
+log_to_file=False
+# CRITICAL = 50; ERROR = 40; WARNING = 30; INFO = 20; DEBUG = 10; NONE = 0
+log_level=10
+log_dir=
+
+[telegram]
+bot_token=<Bot Token>
+
+[zulip]
+email=<Email Address of Your Zulip Bot>
+key=<API key>
+site=<Zulip Chat URL>
+stream=<Stream Name Where to Forward the Messages>
+to=<Topic Name> (if empty, it defaults to current date dd-MM-YYYY) 
