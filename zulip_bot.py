@@ -44,6 +44,7 @@ else:
 # Set up logging
 formatter_str = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 date_format = "%Y-%m-%d"
+date_log_format = "%Y-%m-%d %HH:%MM"
 log_level = int(config["log"]["log_level"])
 
 # Enable logging
@@ -144,6 +145,8 @@ def echo(update: Update, _: CallbackContext) -> None:
 def forward_text(update: Update, _: CallbackContext) -> None:
     user = update.message.from_user
     date = update.message.date.astimezone(local_tz)
+
+    log(logging.INFO, f"Forwarwding message '{update.message.text}' of user {user} received at {date.strftime(date_log_format)}")
     
     # Build an API request
     request = {
@@ -169,8 +172,7 @@ def forward_reply(update: Update, _: CallbackContext):
     reply_to_user = reply_msg.from_user
     reply_date = reply_msg.date.astimezone(local_tz)
 
-    #update.message.reply_text(f"{reply_to_user.first_name} ({reply_date.strftime('%H:%M')}):\n{reply_msg.text}")
-    #update.message.reply_text(f"{user.first_name} ({date.strftime('%H:%M')}):\n{msg.text}")
+    log(logging.INFO, f"Reply to {reply_to_user} at {reply_date.strftime(date_log_format)}\nForwarwding message '{msg.text}' of user {user} received at {date.strftime(date_log_format)}")
 
     # Build the message content for Zulip
     content = f"> *{reply_to_user.first_name} wrote ({reply_date.strftime('%H:%M')}):*\n> {reply_msg.text}\n\n*{user.first_name}:*\n{msg.text}"
