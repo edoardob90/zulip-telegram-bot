@@ -153,7 +153,7 @@ def forward_text(update: Update, _: CallbackContext) -> None:
         "type": "stream",
         "to": stream,
         "topic": date.strftime("%d %B %Y") if date_as_topic else topic,
-        "content": f"*{user.first_name} {user.last_name}:*\n{update.message.text}"
+        "content": f"*{user.first_name}:*\n{update.message.text}"
     }
     
     # Process API request
