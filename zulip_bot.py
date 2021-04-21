@@ -48,8 +48,8 @@ with open(config_file) as config_fp:
     config.read_file(config_fp)
 
 
-# Local time-zone
-local_tz = tz.tzlocal()
+# Local time-zone. Use 'Europe/Zurich'
+local_tz = tz.gettz("Europe/Zurich")
 
 # Date & time formats for printing
 date_fmt = "%d %B %Y"
@@ -73,7 +73,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Current timestamp for logging
-date = datetime.datetime.now().strftime(date_format)
+date = datetime.datetime.now(tz=local_tz).strftime(date_format)
 
 # Add a file handler to the logger if enabled
 if config["log"]["log_to_file"]:
@@ -110,7 +110,7 @@ def log(severity, msg):
 
     # Add file handler to logger if enabled
     if config["log"]["log_to_file"]:
-        now = datetime.datetime.now().strftime(date_format)
+        now = datetime.datetime.now(tz=local_tz).strftime(date_format)
 
         # If current date not the same as initial one, create new FileHandler
         if str(now) != str(date):
@@ -156,10 +156,6 @@ def start(update: Update, _: CallbackContext) -> None:
 def help_command(update: Update, _: CallbackContext) -> None:
     """Send a message when the command /help is issued."""
     update.message.reply_text('Help!')
-
-def echo(update: Update, _: CallbackContext) -> None:
-    """Echo the user message."""
-    update.message.reply_text("Sent on " + update.message.date.strftime("%d-%B-%Y, %H:%M") + ": " + update.message.text)
 
 def forward_text(update: Update, _: CallbackContext) -> None:
     user = update.message.from_user
