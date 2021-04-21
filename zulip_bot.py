@@ -28,6 +28,10 @@ import zulip
 # Local time-zone
 local_tz = tz.tzlocal()
 
+# Date & time formats for printing
+date_fmt = "%d %B %Y"
+time_fmt = "%H:%M"
+
 # Config file should contain:
 # 1. Bot Token
 # 2. Path to 'zuliprc'
@@ -115,9 +119,9 @@ def log(severity, msg):
 # Check the response JSON of the API call
 def check_result(result):
     if result['result'] != 'success':
-        log(logging.ERROR, f"Zulip API returned an error: {result['code']}\n{result['msg']}")
+        log(logging.ERROR, f"Zulip API returned an error: {result['code']} - {result['msg']}")
 
-# Get stream & topic of the message to forward
+# Get stream & topic where to forward the message
 stream = config['zulip']['stream']
 topic = config['zulip']['to']
 date_as_topic = True if not topic else False
@@ -152,7 +156,7 @@ def forward_text(update: Update, _: CallbackContext) -> None:
     request = {
         "type": "stream",
         "to": stream,
-        "topic": date.strftime("%d %B %Y") if date_as_topic else topic,
+        "topic": date.strftime(date_fmt) if date_as_topic else topic,
         "content": f"*{user.first_name}:*\n{update.message.text}"
     }
     
@@ -171,17 +175,21 @@ def forward_reply(update: Update, _: CallbackContext):
     reply_msg = update.message.reply_to_message
     reply_to_user = reply_msg.from_user
     reply_date = reply_msg.date.astimezone(local_tz)
+    
+    # Check if original message and reply have the same date
+    # If not, include the date in the quoted reply
+    reply_date_print = reply_date.strftime(time_fmt) if (reply_date.strftime(date_fmt) == date.strftime(date_fmt)) else reply_date.strftime(f"{date_fmt}, {time_fmt}")
 
     log(logging.INFO, f"Reply to {reply_to_user} at {reply_date.strftime(date_log_format)}\nForwarwding message '{msg.text}' of user {user} received at {date.strftime(date_log_format)}")
 
     # Build the message content for Zulip
-    content = f"> *{reply_to_user.first_name} wrote ({reply_date.strftime('%H:%M')}):*\n> {reply_msg.text}\n\n*{user.first_name}:*\n{msg.text}"
+    content = f"> *{reply_to_user.first_name} wrote ({reply_date_print}):*\n> {reply_msg.text}\n\n*{user.first_name}:*\n{msg.text}"
 
     # Build an API request
     request = {
         "type": "stream",
         "to": stream,
-        "topic": date.strftime("%d %B %Y") if date_as_topic else topic,
+        "topic": date.strftime(date_fmt) if date_as_topic else topic,
         "content": content
     }
     
@@ -189,6 +197,8 @@ def forward_reply(update: Update, _: CallbackContext):
     result = zulip_client.send_message(request)
 
     check_result(result)
+
+################################################################################################################
 
 # Set up Zulip API
 api_key, email, site = config["zulip"]["key"], config["zulip"]["email"], config["zulip"]["site"]
