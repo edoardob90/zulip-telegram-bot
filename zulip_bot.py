@@ -70,12 +70,12 @@ logger = logging.getLogger(__name__)
 date = datetime.datetime.now(tz=local_tz).strftime(date_format)
 
 # Add a file handler to the logger if enabled
-if config["log"]["log_to_file"]:
+if config["log"].getboolean("log_to_file"):
     # Where to put log files
-    if config["log"]["log_dir"] != "":
-        log_dir = config["log"]["log_dir"]
+    if config["log"]["log_dir"] != '':
+        log_dir = os.path.abspath(config["log"]["log_dir"])
     else:
-        log_dir = "logs"
+        log_dir = os.path.abspath(os.path.join(os.getcwd(), "logs"))
     
     # If log directory doesn't exist, create it
     if not os.path.exists(log_dir):
@@ -103,7 +103,7 @@ def log(severity, msg):
         return
 
     # Add file handler to logger if enabled
-    if config["log"]["log_to_file"]:
+    if config["log"].getboolean("log_to_file"):
         now = datetime.datetime.now(tz=local_tz).strftime(date_format)
 
         # If current date not the same as initial one, create new FileHandler
