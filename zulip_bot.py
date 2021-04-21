@@ -19,11 +19,34 @@ import logging
 import datetime
 from dateutil import tz
 from configparser import ConfigParser
+from argparse import ArgumentParser
 
 from telegram import Update, ForceReply
 from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
 
 import zulip
+
+# Argument parser
+ap = ArgumentParser()
+ap.add_argument('-c', '--config', default='', help="Path to config file. Default is $PWD/config")
+args = vars(ap.parse_args())
+
+# If no config file is supplied, look into PWD
+if not args['config']:
+    if not os.path.isfile(os.path.join(os.getcwd(), 'config')):
+        exit(f"No configuration file in {os.getcwd()}!")
+    else:
+        config_file = os.path.abspath(os.path.join(os.getcwd(), 'config'))
+elif os.path.isfile(args['config']):
+    config_file = os.path.abspath(args['config'])
+else:
+    exit(f"Configuration file {args['config']} doesn't exist!")
+
+config = ConfigParser()
+# Read configuration
+with open(config_file) as config_fp:
+    config.read_file(config_fp)
+
 
 # Local time-zone
 local_tz = tz.tzlocal()
@@ -36,14 +59,6 @@ time_fmt = "%H:%M"
 # 1. Bot Token
 # 2. Path to 'zuliprc'
 # 3. Path for logging to file (default: zulip_bot_logs)
-
-if os.path.isfile("config"):
-    config = ConfigParser()
-    # Read configuration
-    with open("config") as config_file:
-        config.read_file(config_file)
-else:
-    exit("No configuration file 'config' found")
 
 # Set up logging
 formatter_str = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
