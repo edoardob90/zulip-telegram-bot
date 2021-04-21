@@ -42,6 +42,7 @@ elif os.path.isfile(args['config']):
 else:
     exit(f"Configuration file {args['config']} doesn't exist!")
 
+# Check config.sample to know which parameters the config must/can contain
 config = ConfigParser()
 # Read configuration
 with open(config_file) as config_fp:
@@ -55,21 +56,14 @@ local_tz = tz.gettz("Europe/Zurich")
 date_fmt = "%d %B %Y"
 time_fmt = "%H:%M"
 
-# Config file should contain:
-# 1. Bot Token
-# 2. Path to 'zuliprc'
-# 3. Path for logging to file (default: zulip_bot_logs)
-
 # Set up logging
 formatter_str = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 date_format = "%Y-%m-%d"
-date_log_format = "%Y-%m-%d %HH:%MM"
+date_log_format = "%Y-%m-%d %H:%M"
 log_level = int(config["log"]["log_level"])
 
 # Enable logging
-logging.basicConfig(
-    format=formatter_str, level=log_level
-)
+logging.basicConfig(format=formatter_str, level=log_level, datefmt=date_log_format)
 logger = logging.getLogger(__name__)
 
 # Current timestamp for logging
