@@ -17,12 +17,13 @@ import os
 import sys
 import logging
 import datetime
+from json import load
 from typing import Any, Union, List, IO, Text, Dict, Optional
 from dateutil import tz
 from configparser import ConfigParser
 from argparse import ArgumentParser
 
-from telegram import Update, ForceReply, File, Message
+from telegram import Update, ForceReply, File, Message, MessageEntity
 from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
 
 import zulip
@@ -34,6 +35,7 @@ def log(severity, msg):
         return
 
     # Add file handler to logger if enabled
+    # TODO: this if-block can be removed. Logging to disk is managed by supervisor
     if config["log"].getboolean("log_to_file"):
         now = datetime.datetime.now(tz=local_tz).strftime(date_format)
 
@@ -59,7 +61,11 @@ def log(severity, msg):
 # Zulip
 ################################################################################################################
 
-def build_request(stream: Text, topic: Union[Text, datetime.datetime], content: List[Message], attachment_url: Optional[Text] = None) -> Dict:
+def build_request(stream: Text,
+                topic: Union[Text, datetime.datetime],
+                content: List[Message],
+                attachment_url: Optional[Text] = None,
+                mentions: Optional[List] = None) -> Dict:
     """Construct the request dict to send to Zulip"""
 
     # Message timestamp
@@ -72,6 +78,11 @@ def build_request(stream: Text, topic: Union[Text, datetime.datetime], content: 
         "content": ""
     }
 
+    # If there are mentions, they should be prepended to the message content
+    if mentions:
+        mentioned_users = " ".join(mentions)
+        request['content'] += f"{mentioned_users} "
+
     # Check if content represents a message with a reply
     if content[1] is None:
         # content = simple message, no attachments
@@ -81,7 +92,7 @@ def build_request(stream: Text, topic: Union[Text, datetime.datetime], content: 
             text = content[0].text
         else:
             text = ""
-        request['content'] = f"*{content[0].from_user.first_name}:*\n{text}"
+        request['content'] += f"*{content[0].from_user.first_name}:*\n{text}"
     else:
         # content = reply message + original message 
         # Check if original message and reply have the same date
@@ -91,7 +102,7 @@ def build_request(stream: Text, topic: Union[Text, datetime.datetime], content: 
 
         text, original_text = [x if x is not None else "" for x in [c.caption if c.caption else c.text for c in content]]
 
-        request['content'] = f"> *{content[0].from_user.first_name} wrote ({reply_date_print}):*\n> {original_text}\n\n*{content[0].from_user.first_name}:*\n{text}"
+        request['content'] += f"> *{content[0].from_user.first_name} wrote ({reply_date_print}):*\n> {original_text}\n\n*{content[0].from_user.first_name}:*\n{text}"
 
     # Append a link to the attached file to the message being forwarded
     if attachment_url is not None:
@@ -137,15 +148,28 @@ def process_message(update: Update, context: CallbackContext) -> None:
     """Process an update message: text-only or with a media (photo, video, document, audio)"""
     message = update.effective_message
     user = message.from_user
-    #caption = message.caption_html if message.caption else None
 
     # Is the message a reply?
     original_msg = update.message.reply_to_message if message.reply_to_message else None
 
+    # Does the message contain a @mention (or more than one)?
+    mentioned_users = []
+    if message.entities and users_mapping:
+        for entity in message.entities:
+            if entity.type == 'TEXT_MENTION':
+                mentioned_users.append(f"@_**{users_mapping[entity.user.first_name]}**")
+
     if message.text:
         # text-only message
-        request = build_request(stream = stream, topic = topic, content = [message, original_msg])
+        request = build_request(
+            stream = stream,
+            topic = topic,
+            content = [message, original_msg],
+            attachment_url = None,
+            mentions = mentioned_users)
+        
         submit_request(request)
+
     else:
         # the message has some content: photo, generic file, video, or audio are supported
         if message.photo:
@@ -169,7 +193,12 @@ def process_message(update: Update, context: CallbackContext) -> None:
         # Download the file and build a request with the file attached
         if file_id is not None:
             file_path = (context.bot.get_file(file_id)).file_path 
-            request = build_request(stream = stream, topic = topic, content = [message, original_msg], attachment_url = file_path)
+            request = build_request(stream = stream,
+                topic = topic,
+                content = [message, original_msg],
+                attachment_url = file_path,
+                mentions = mentioned_users)
+            
             submit_request(request)
     
 
@@ -180,6 +209,7 @@ def process_message(update: Update, context: CallbackContext) -> None:
 # Argument parser
 ap = ArgumentParser()
 ap.add_argument('-c', '--config', default='', help="Path to config file. Default is $PWD/config")
+ap.add_argument('-u', '--users', default='', help="Path to JSON file containing a mapping between Telegram users' first names and Zulip usernames")
 args = vars(ap.parse_args())
 
 # If no config file is supplied, look into PWD
@@ -220,6 +250,7 @@ logger = logging.getLogger(__name__)
 date = datetime.datetime.now(tz=local_tz).strftime(date_format)
 
 # Add a file handler to the logger if enabled
+# TODO: all this stuff can be removed as the bot is managed by supervisor which manages logging to disk
 if config["log"].getboolean("log_to_file"):
     # Where to put log files
     if config["log"]["log_dir"] != '':
@@ -271,6 +302,17 @@ try:
     os.makedirs(downloads_dir)
 except (FileExistsError, PermissionError):
     log(logging.ERROR, f"Directory {downloads_dir} exists!")
+
+# Check if a Telegram-Zulip username mappings has been supplied
+users_mapping = {}
+if args['users']:
+    users_fpath = os.path.abspath(args['users'])
+    try:
+        with open(users_fpath, 'r') as fp:
+            users_mapping = load(fp)
+    except FileNotFoundError:
+        log(logging.ERROR, f"Users mapping file {users_fpath} not found!")
+        raise
     
 # Create the Updater and pass it your bot's token.
 updater = Updater(config["telegram"]['bot_token'])

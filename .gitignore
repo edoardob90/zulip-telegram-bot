@@ -3,3 +3,4 @@ config
 curl_send.sh
 telegram_downloads
 .DS_Store
+zulip_users.json
