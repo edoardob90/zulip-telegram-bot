@@ -71,6 +71,8 @@ def build_request(stream: Text,
     # Message timestamp
     date = content[0].date.astimezone(local_tz)
 
+    # Request template
+    text = ""
     request = {
         "type": "stream",
         "to": stream,
@@ -78,21 +80,21 @@ def build_request(stream: Text,
         "content": ""
     }
 
-    # If there are mentions, they should be prepended to the message content
+    # If there are mentions, they should be prepended to the message text
     if mentions:
         mentioned_users = " ".join(mentions)
-        request['content'] += f"{mentioned_users} "
+        text += f"{mentioned_users} "
 
     # Check if content represents a message with a reply
     if content[1] is None:
         # content = simple message, no attachments
         if content[0].caption:
-            text = content[0].caption
+            text += content[0].caption
         elif content[0].text:
-            text = content[0].text
-        else:
-            text = ""
+            text += content[0].text
+
         request['content'] += f"*{content[0].from_user.first_name}:*\n{text}"
+
     else:
         # content = reply message + original message 
         # Check if original message and reply have the same date
@@ -100,7 +102,8 @@ def build_request(stream: Text,
         reply_date = content[1].date.astimezone(local_tz)
         reply_date_print = reply_date.strftime(time_fmt) if (reply_date.strftime(date_fmt) == date.strftime(date_fmt)) else reply_date.strftime(f"{date_fmt}, {time_fmt}")
 
-        text, original_text = [x if x is not None else "" for x in [c.caption if c.caption else c.text for c in content]]
+        reply_text, original_text = [x if x is not None else "" for x in [c.caption if c.caption else c.text for c in content]]
+        text += reply_text
 
         request['content'] += f"> *{content[0].from_user.first_name} wrote ({reply_date_print}):*\n> {original_text}\n\n*{content[0].from_user.first_name}:*\n{text}"
 
@@ -156,7 +159,7 @@ def process_message(update: Update, context: CallbackContext) -> None:
     mentioned_users = []
     if message.entities and users_mapping:
         for entity in message.entities:
-            if entity.type == 'TEXT_MENTION':
+            if entity.type == 'text_mention':
                 mentioned_users.append(f"@_**{users_mapping[entity.user.first_name]}**")
 
     if message.text:
