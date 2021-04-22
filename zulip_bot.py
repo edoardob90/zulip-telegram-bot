@@ -14,6 +14,7 @@ bot.
 """
 
 import os
+import re
 import sys
 import logging
 import datetime
@@ -160,7 +161,16 @@ def process_message(update: Update, context: CallbackContext) -> None:
     if message.entities and users_mapping:
         for entity in message.entities:
             if entity.type == 'text_mention':
+                # This is a full-name (or first name) mention
                 mentioned_users.append(f"@_**{users_mapping[entity.user.first_name]}**")
+            elif entity.type == 'mention':
+                # If a user has set a @username, the entity doesn't bear a telegram.User object
+                _text = message.caption if message.caption else message.text
+                match = re.search(r'@([\w\d]+)', _text)
+                if match:
+                    _user = match.group(1)
+                    if _user in users_mapping:
+                        mentioned_users.append(f"@_**{users_mapping[_user]}**")
 
     if message.text:
         # text-only message
