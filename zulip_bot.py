@@ -154,7 +154,8 @@ def process_message(update: Update, context: CallbackContext) -> None:
     user = message.from_user
 
     # Is the message a reply?
-    original_msg = update.message.reply_to_message if message.reply_to_message else None
+    # FIXME: this syntax is not very elegant. There must be a better way to write it!
+    original_msg = message.reply_to_message if message.reply_to_message else None
 
     # Does the message contain a @mention (or more than one)?
     mentioned_users = []
