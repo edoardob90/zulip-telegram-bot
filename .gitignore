@@ -1,3 +1,5 @@
 config
 *workspace
 curl_send.sh
+telegram_downloads
+.DS_Store
