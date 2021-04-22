@@ -61,15 +61,16 @@ def log(severity, msg):
 
 def build_request(stream: Text, topic: Union[Text, datetime.datetime], content: List[Message], attachment_url: Optional[Text] = None) -> Dict:
     """Construct the request dict to send to Zulip"""
-    request = {
-        "type": "stream",
-        "to": stream,
-        "topic": topic.strftime(date_fmt) if date_as_topic else topic,
-        "content": ""
-    }
 
     # Message timestamp
     date = content[0].date.astimezone(local_tz)
+
+    request = {
+        "type": "stream",
+        "to": stream,
+        "topic": date.strftime(date_fmt) if date_as_topic else topic,
+        "content": ""
+    }
 
     # Check if content represents a message with a reply
     if content[1] is None:
@@ -259,7 +260,7 @@ else:
 # Get stream & topic where to forward the message
 stream = config['zulip']['stream']
 topic = config['zulip']['to']
-# By default, use message date as the topic
+# If 'topic' empty, the topic will be the current date formatted as dd-MM-YYYY
 date_as_topic = True if not topic else False
 
 # Create the directory where to download files requested to Telegram
