@@ -58,9 +58,9 @@ def log(severity, msg):
     # The actual logging
     logger.log(severity, msg)
 
-################################################################################################################
-# Zulip
-################################################################################################################
+###########
+#  Zulip  #
+###########
 
 def build_request(stream: Text,
                 topic: Union[Text, datetime.datetime],
@@ -87,8 +87,8 @@ def build_request(stream: Text,
         text += f"{mentioned_users} "
 
     # Check if content represents a message with a reply
-    if content[1] is None:
-        # content = simple message, no attachments
+    if None in content:
+        # content is a new message
         if content[0].caption:
             text += content[0].caption
         elif content[0].text:
@@ -98,15 +98,14 @@ def build_request(stream: Text,
 
     else:
         # content = reply message + original message 
-        # Check if original message and reply have the same date
-        # If not, include the date in the quoted reply
+        # Check if original message and reply have the same date. If not, include the date in the quoted reply
         reply_date = content[1].date.astimezone(local_tz)
         reply_date_print = reply_date.strftime(time_fmt) if (reply_date.strftime(date_fmt) == date.strftime(date_fmt)) else reply_date.strftime(f"{date_fmt}, {time_fmt}")
 
         reply_text, original_text = [x if x is not None else "" for x in [c.caption if c.caption else c.text for c in content]]
         text += reply_text
 
-        request['content'] += f"> *{content[0].from_user.first_name} wrote ({reply_date_print}):*\n> {original_text}\n\n*{content[0].from_user.first_name}:*\n{text}"
+        request['content'] += f"> *{content[1].from_user.first_name} wrote ({reply_date_print}):*\n> {original_text}\n\n*{content[0].from_user.first_name}:*\n{text}"
 
     # Append a link to the attached file to the message being forwarded
     if attachment_url is not None:
@@ -114,18 +113,22 @@ def build_request(stream: Text,
 
     return request
 
-def submit_request(request: Dict) -> None:
+def submit_request(request: Dict) -> Dict:
     """Submit the request & check the response JSON"""
     if not request:
         log(logging.ERROR, "Empty request to Zulip API ignored")
         return
-    result = zulip_client.send_message(request)
-    if result['result'] != 'success':
-        log(logging.ERROR, f"Zulip API returned an error: {result['code']} - {result['msg']}")
+    return zulip_client.send_message(request)
 
-################################################################################################################
-# Telegram bot
-################################################################################################################
+def read_response(result: Dict) -> Dict:
+    if result['result'] != 'success':
+        log(logging.ERROR, f"Zulip API returned '{result['code']}': {result['msg']}")
+        return {'response': 'error'}
+    return result
+
+##################
+#  Telegram bot  #
+##################
 
 # Define a few command handlers. These usually take the two arguments update and
 # context.
@@ -149,8 +152,10 @@ def download_file(file: File) -> Text:
     return file_path
 
 def process_message(update: Update, context: CallbackContext) -> None:
-    """Process an update message: text-only or with a media (photo, video, document, audio)"""
-    message = update.effective_message
+    """
+    Process an update message: text-only or with a media (photo, video, document, audio, voice message)
+    """
+    message = update.effective_message # 'effective_message' represents both new and edited messages
     user = message.from_user
 
     # Is the message a reply?
@@ -216,9 +221,9 @@ def process_message(update: Update, context: CallbackContext) -> None:
             submit_request(request)
     
 
-################################################################################################################
-# Main                                                                  
-################################################################################################################
+##########
+#  Main  #                                                                 
+##########
 
 # Argument parser
 ap = ArgumentParser()
@@ -294,13 +299,18 @@ if config["log"].getboolean("log_to_file"):
     sys.stderr = open(logfile_path, "w")
 
 # Set up Zulip API
-api_key, email, site = config["zulip"]["key"], config["zulip"]["email"], config["zulip"]["site"]
-if None in (api_key, email):
+zulip_conf = config["zulip"]
+api_key, email, site = zulip_conf["key"], zulip_conf["email"], zulip_conf["site"]
+if '' in (api_key, email):
     msg = "Zulip API: 'api_key' and 'email' are required"
     log(logging.ERROR, msg)
     exit(msg)
 else:
     zulip_client = zulip.Client(api_key=api_key, email=email, site=site)
+
+# To be able to send a 'PATCH' API request (i.e., edit a message), we need a mapping between Telegram's message_id and Zulip's
+# Initialize as an empty dict
+messages_ids = {}
 
 # Get stream & topic where to forward the message
 stream = config['zulip']['stream']
@@ -312,12 +322,14 @@ date_as_topic = True if not topic else False
 # Downloads dir is by default in $PWD/telegram_downloads
 # TODO: implement something to purge this folder when the bot stops or restarts
 downloads_dir = os.path.join(os.getcwd(), 'telegram_downloads')
-try:
-    os.makedirs(downloads_dir)
-except (FileExistsError, PermissionError):
-    log(logging.ERROR, f"Directory {downloads_dir} exists!")
+if not os.path.exists(downloads_dir):
+    try:
+        os.makedirs(downloads_dir)
+    except PermissionError:
+        log(logging.WARNING, f"Permission error when attempting to create {downloads_dir}!")
 
 # Check if a Telegram-Zulip username mappings has been supplied
+# This file is required to forward @-mentions to Zulip's stream
 users_mapping = {}
 if args['users']:
     users_fpath = os.path.abspath(args['users'])
@@ -327,7 +339,8 @@ if args['users']:
     except FileNotFoundError:
         log(logging.ERROR, f"Users mapping file {users_fpath} not found!")
         raise
-    
+
+# Set up and then run the Telegram bot
 # Create the Updater and pass it your bot's token.
 updater = Updater(config["telegram"]['bot_token'])
 
