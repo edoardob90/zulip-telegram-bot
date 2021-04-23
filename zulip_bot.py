@@ -18,8 +18,10 @@ import re
 import sys
 import logging
 import datetime
+import sqlite3
+import threading
 from json import load
-from typing import Any, Union, List, IO, Text, Dict, Optional
+from typing import Any, Union, List, IO, Text, Dict, Optional, Tuple
 from dateutil import tz
 from dateutil.relativedelta import relativedelta
 from configparser import ConfigParser
@@ -119,12 +121,12 @@ def zulip_api_request(stream: Text,
     if not is_edit:
         result = zulip_client.send_message(request)
         if check_response(result):
-            messages_ids[message_id] = result['id']
+            db_add_id(message_id, result['id'])
     else:
         if (date + _60min_delta) >= datetime.datetime.now().astimezone(local_tz):
             check_response(
                 zulip_client.update_message({
-                "message_id": messages_ids[message_id],
+                "message_id": db_find_id(message_id)[0],
                 "content": request['content']
                 })
             )
@@ -233,6 +235,41 @@ def process_message(update: Update, context: CallbackContext) -> None:
                 is_edit = is_edit,
                 attachment_url = file_path,
                 mentions = mentioned_users)
+
+####################
+#  Database utils  #
+####################
+
+def db_connect():
+    if not hasattr(LOCAL, "db"):
+        LOCAL.db = sqlite3.connect(os.path.join(os.getcwd(), "messages_ids.db"))
+    return LOCAL.db
+
+def db_run_query(query: Text, *params: Tuple, read: bool = False):
+    connect = db_connect()
+    cursor = connect.cursor()
+    try:
+        cursor.execute(query, params)
+        cursor.connection.commit()
+        if read:
+            return cursor.fetchone()
+    except:
+        cursor.connection.rollback()
+        raise
+    finally:
+        cursor.close()
+
+def db_create():
+    query = "CREATE TABLE IF NOT EXISTS messages (tid INTEGER PRIMARY KEY, zid INTEGER)"
+    db_run_query(query)
+
+def db_add_id(telegram_msg_id: int, zulip_msg_id: int) -> None:
+    query = "INSERT OR IGNORE INTO messages VALUES (?, ?)"
+    db_run_query(query, telegram_msg_id, zulip_msg_id)
+
+def db_find_id(telegram_msg_id: int):
+    query = "SELECT zid FROM messages WHERE tid=?"
+    return db_run_query(query, telegram_msg_id, read=True)
     
 
 ##########
@@ -323,11 +360,12 @@ else:
     zulip_client = zulip.Client(api_key=api_key, email=email, site=site)
 
 # To be able to send a 'PATCH' API request (i.e., edit a message), we need a mapping between Telegram's message_id and Zulip's
-# Initialize as an empty dict
-# FIXME: this is NON-PERSISTENT!
-#   If the bot ever restarts, the first time a user edits a message, it will be re-sent as a new one to Zulip
-messages_ids = {}
-# Moreover, Zulip allows a message to be edited only if it's not older than 60 minutes
+# We store (telegram_msg_id, zulip_msg_id) in a SQL db
+# Make sure writing asyncronously to db is thread-safe
+LOCAL = threading.local()
+db_create()
+
+# Zulip allows a message to be edited only if it's not older than 60 minutes
 _60min_delta = relativedelta(minutes=60)
 
 # Get stream & topic where to forward the message
