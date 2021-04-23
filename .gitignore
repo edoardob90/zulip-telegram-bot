@@ -5,3 +5,5 @@ telegram_downloads
 .DS_Store
 zulip_users.json
 edited_reply_sample
+zulip_api_test.py
+config.test

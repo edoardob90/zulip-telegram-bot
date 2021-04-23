@@ -21,6 +21,7 @@ import datetime
 from json import load
 from typing import Any, Union, List, IO, Text, Dict, Optional
 from dateutil import tz
+from dateutil.relativedelta import relativedelta
 from configparser import ConfigParser
 from argparse import ArgumentParser
 
@@ -62,15 +63,18 @@ def log(severity, msg):
 #  Zulip  #
 ###########
 
-def build_request(stream: Text,
+def zulip_api_request(stream: Text,
                 topic: Union[Text, datetime.datetime],
                 content: List[Message],
+                is_edit: Optional[bool] = False,
                 attachment_url: Optional[Text] = None,
-                mentions: Optional[List] = None) -> Dict:
+                mentions: Optional[List] = None) -> None:
     """Construct the request dict to send to Zulip"""
 
-    # Message timestamp
+    # Message properties
     date = content[0].date.astimezone(local_tz)
+    message_id = content[0].message_id
+    sender_name = content[0].from_user.first_name
 
     # Request template
     text = ""
@@ -97,7 +101,7 @@ def build_request(stream: Text,
         request['content'] += f"*{content[0].from_user.first_name}:*\n{text}"
 
     else:
-        # content = reply message + original message 
+        # content = reply message + original message
         # Check if original message and reply have the same date. If not, include the date in the quoted reply
         reply_date = content[1].date.astimezone(local_tz)
         reply_date_print = reply_date.strftime(time_fmt) if (reply_date.strftime(date_fmt) == date.strftime(date_fmt)) else reply_date.strftime(f"{date_fmt}, {time_fmt}")
@@ -105,26 +109,34 @@ def build_request(stream: Text,
         reply_text, original_text = [x if x is not None else "" for x in [c.caption if c.caption else c.text for c in content]]
         text += reply_text
 
-        request['content'] += f"> *{content[1].from_user.first_name} wrote ({reply_date_print}):*\n> {original_text}\n\n*{content[0].from_user.first_name}:*\n{text}"
+        request['content'] += f"> *{content[1].from_user.first_name} wrote ({reply_date_print}):*\n> {original_text}\n\n*{sender_name}:*\n{text}"
 
     # Append a link to the attached file to the message being forwarded
     if attachment_url is not None:
-        request['content'] += f"\n[Link to file]({attachment_url})" 
+        request['content'] += f"\n[Link to file]({attachment_url})"
 
-    return request
+    # Submit the request and check the response JSON
+    if not is_edit:
+        result = zulip_client.send_message(request)
+        if check_response(result):
+            messages_ids[message_id] = result['id']
+    else:
+        if (date + _60min_delta) >= datetime.datetime.now().astimezone(local_tz):
+            check_response(
+                zulip_client.update_message({
+                "message_id": messages_ids[message_id],
+                "content": request['content']
+                })
+            )
+        else:
+            log(logging.WARNING, f"User {sender_name} tried to edit a message older than 60 minutes. Zulip doesn't allow such edits.")
 
-def submit_request(request: Dict) -> Dict:
-    """Submit the request & check the response JSON"""
-    if not request:
-        log(logging.ERROR, "Empty request to Zulip API ignored")
-        return
-    return zulip_client.send_message(request)
 
-def read_response(result: Dict) -> Dict:
+def check_response(result: Dict) -> bool:
     if result['result'] != 'success':
         log(logging.ERROR, f"Zulip API returned '{result['code']}': {result['msg']}")
-        return {'response': 'error'}
-    return result
+        return False
+    return True
 
 ##################
 #  Telegram bot  #
@@ -158,6 +170,9 @@ def process_message(update: Update, context: CallbackContext) -> None:
     message = update.effective_message # 'effective_message' represents both new and edited messages
     user = message.from_user
 
+    # Is the update an edit of a previous message?
+    is_edit = True if update.edited_message else False
+
     # Is the message a reply?
     # FIXME: this syntax is not very elegant. There must be a better way to write it!
     original_msg = message.reply_to_message if message.reply_to_message else None
@@ -180,14 +195,13 @@ def process_message(update: Update, context: CallbackContext) -> None:
 
     if message.text:
         # text-only message
-        request = build_request(
+        zulip_api_request(
             stream = stream,
             topic = topic,
             content = [message, original_msg],
+            is_edit = is_edit,
             attachment_url = None,
             mentions = mentioned_users)
-        
-        submit_request(request)
 
     else:
         # the message has some content: photo, generic file, video, or audio are supported
@@ -212,13 +226,13 @@ def process_message(update: Update, context: CallbackContext) -> None:
         # Download the file and build a request with the file attached
         if file_id is not None:
             file_path = (context.bot.get_file(file_id)).file_path 
-            request = build_request(stream = stream,
+            zulip_api_request(
+                stream = stream,
                 topic = topic,
                 content = [message, original_msg],
+                is_edit = is_edit,
                 attachment_url = file_path,
                 mentions = mentioned_users)
-            
-            submit_request(request)
     
 
 ##########
@@ -310,7 +324,11 @@ else:
 
 # To be able to send a 'PATCH' API request (i.e., edit a message), we need a mapping between Telegram's message_id and Zulip's
 # Initialize as an empty dict
+# FIXME: this is NON-PERSISTENT!
+#   If the bot ever restarts, the first time a user edits a message, it will be re-sent as a new one to Zulip
 messages_ids = {}
+# Moreover, Zulip allows a message to be edited only if it's not older than 60 minutes
+_60min_delta = relativedelta(minutes=60)
 
 # Get stream & topic where to forward the message
 stream = config['zulip']['stream']
