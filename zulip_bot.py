@@ -242,7 +242,7 @@ def process_message(update: Update, context: CallbackContext) -> None:
 
 def db_connect():
     connection = None
-    db_path = os.path.abspath(config['db'].get('db_name', 'data.db'))
+    db_path = os.path.abspath(config['db'].get('db_path', 'data.db'))
     try:
         connection = sqlite3.connect(db_path)
     except Error as e:
@@ -284,7 +284,6 @@ def db_find_id(telegram_msg_id: int):
 # Argument parser
 ap = ArgumentParser()
 ap.add_argument('-c', '--config', default='', help="Path to config file. Default is $PWD/config")
-ap.add_argument('-u', '--users', default='', help="Path to JSON file containing a mapping between Telegram users' first names and Zulip usernames")
 args = vars(ap.parse_args())
 
 # If no config file is supplied, look into PWD
@@ -391,14 +390,13 @@ if not os.path.exists(downloads_dir):
 # Check if a Telegram-Zulip username mappings has been supplied
 # This file is required to forward @-mentions to Zulip's stream
 users_mapping = {}
-if args['users']:
-    users_fpath = os.path.abspath(args['users'])
-    try:
-        with open(users_fpath, 'r') as fp:
-            users_mapping = load(fp)
-    except FileNotFoundError:
-        log(logging.ERROR, f"Users mapping file {users_fpath} not found!")
-        raise
+users_mapping_file = os.path.abspath(zulip_conf.get('zulip_users', 'zulip_users.json'))
+try:
+    with open(users_mapping_file, 'r') as fp:
+        users_mapping = load(fp)
+except FileNotFoundError:
+    log(logging.ERROR, f"Users mapping file {users_mapping_file} not found!")
+    raise
 
 # Set up and then run the Telegram bot
 # Create the Updater and pass it your bot's token.
