@@ -24,7 +24,7 @@ from json import load
 from typing import Any, Union, List, IO, Text, Dict, Optional, Tuple
 from dateutil import tz
 from dateutil.relativedelta import relativedelta
-from configparser import ConfigParser
+from configparser import ConfigParser, ExtendedInterpolation
 from argparse import ArgumentParser
 
 from telegram import Update, ForceReply, File, Message, MessageEntity
@@ -298,7 +298,7 @@ else:
     exit(f"Configuration file {args['config']} doesn't exist!")
 
 # Check config.sample to know which parameters the config must/can contain
-config = ConfigParser()
+config = ConfigParser(interpolation=ExtendedInterpolation())
 # Read configuration
 with open(config_file) as config_fp:
     config.read_file(config_fp)
