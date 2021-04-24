@@ -76,7 +76,9 @@ def zulip_api_request(stream: Text,
     # Message properties
     date = content[0].date.astimezone(local_tz)
     message_id = content[0].message_id
+    chat_id = content[0].chat.id
     sender_name = content[0].from_user.first_name
+    message_link = message_link_fmt.format(str(chat_id)[4:], message_id)
 
     # Request template
     text = ""
@@ -100,7 +102,7 @@ def zulip_api_request(stream: Text,
         elif content[0].text:
             text += content[0].text
 
-        request['content'] += f"*{content[0].from_user.first_name}:*\n{text}"
+        request['content'] += f"*[{sender_name}]({message_link}):*\n{text}"
 
     else:
         # content = reply message + original message
@@ -111,7 +113,7 @@ def zulip_api_request(stream: Text,
         reply_text, original_text = [x if x is not None else "" for x in [c.caption if c.caption else c.text for c in content]]
         text += reply_text
 
-        request['content'] += f"> *{content[1].from_user.first_name} wrote ({reply_date_print}):*\n> {original_text}\n\n*{sender_name}:*\n{text}"
+        request['content'] += f"> *{content[1].from_user.first_name} wrote ({reply_date_print}):*\n> {original_text}\n\n*[{sender_name}]({message_link}):*\n{text}"
 
     # Append a link to the attached file to the message being forwarded
     if attachment_url is not None:
@@ -144,6 +146,9 @@ def check_response(result: Dict) -> bool:
 #  Telegram bot  #
 ##################
 
+# Message link format, to be able to link back a message from Zulip to Telegram
+message_link_fmt = "https://t.me/c/{}/{}"
+
 # Define a few command handlers. These usually take the two arguments update and
 # context.
 def start(update: Update, _: CallbackContext) -> None:
@@ -156,7 +161,7 @@ def start(update: Update, _: CallbackContext) -> None:
 
 def help_command(update: Update, _: CallbackContext) -> None:
     """Send a message when the command /help is issued."""
-    update.message.reply_text('Help!')
+    update.message.reply_text('At the moment, you cannot interact with me. I am only listening to your discussions 👀...')
 
 def download_file(file: File) -> Text:
     """Request the download of a file"""
@@ -409,7 +414,7 @@ dispatcher = updater.dispatcher
 dispatcher.add_handler(CommandHandler("start", start))
 dispatcher.add_handler(CommandHandler("help", help_command))
 
-# on non command i.e message - echo the message on Telegram
+# on non command i.e message - call 'process_message'
 dispatcher.add_handler(MessageHandler(Filters.all & ~Filters.command, process_message))
 
 # Start the Bot
