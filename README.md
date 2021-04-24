@@ -37,7 +37,7 @@ Markdown syntax will be rendered automatically by Zulip. If the original message
 
 Look into `config.sample` to know which parameters are necessary. Telegram bot's token and API key/email of your Zulip bot are compulsory.
 
-Specifying paths with string interpolation, might be a more robust solution to avoid `FileNotFound` errors. For example, you can define a `[paths]` section in your `config` file and then specify the database path as `db_path = %(custom_dir)s/%(db_name)s`.
+Specifying paths with string interpolation, might be a more robust solution to avoid `FileNotFound` errors. For example, you can define a `[paths]` section in your `config` file and then specify the database path as `db_path = %{paths:custom_dir}/{db_name}`.
 
 ```
 [paths]
@@ -55,7 +55,7 @@ The JSON file should be as simple as
 ```json
 { 
     "telegram_user_1": "zulip_user_1",
-    "...": "***"
+    "telegram_user_2": "zulip_user_2",
 }
 ```
 

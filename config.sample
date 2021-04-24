@@ -12,7 +12,7 @@ bot_token = <Bot Token>
 
 [db]
 db_name = data.db
-db_path = %(work_dir)s/%(db_name)s
+db_path = %{paths:work_dir}/%{db_name}
 
 [zulip]
 zulip_users = <path to a JSON file mapping Telegram usernames with Zulip's>
