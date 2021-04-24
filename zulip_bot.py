@@ -242,8 +242,9 @@ def process_message(update: Update, context: CallbackContext) -> None:
 
 def db_connect():
     connection = None
+    db_path = os.path.abspath(config['db'].get('db_name', 'data.db'))
     try:
-        connection = sqlite3.connect(config['db'].get('db_name', 'messages_ids.db'))
+        connection = sqlite3.connect(db_path)
     except Error as e:
         log(logging.ERROR, f"SQLite3: error {e} occurred")
     return connection
