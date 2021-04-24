@@ -55,7 +55,7 @@ The JSON file should be as simple as
 ```json
 { 
     "telegram_user_1": "zulip_user_1",
-    ...
+    "...": "***"
 }
 ```
 
