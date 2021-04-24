@@ -45,7 +45,7 @@ my_dir = /home
 
 [db]
 db_name = data.db
-db_path = %(my_dir)s/%(db_name)s
+db_path = ${paths:my_dir}/${db_name}
 ```
 
 ### Usernames mapping
