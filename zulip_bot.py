@@ -19,7 +19,7 @@ import sys
 import logging
 import datetime
 import sqlite3
-import threading
+from sqlite3 import Error, Connection
 from json import load
 from typing import Any, Union, List, IO, Text, Dict, Optional, Tuple
 from dateutil import tz
@@ -241,9 +241,12 @@ def process_message(update: Update, context: CallbackContext) -> None:
 ####################
 
 def db_connect():
-    if not hasattr(LOCAL, "db"):
-        LOCAL.db = sqlite3.connect(os.path.join(os.getcwd(), "messages_ids.db"))
-    return LOCAL.db
+    connection = None
+    try:
+        connection = sqlite3.connect(config['db'].get('db_name', 'messages_ids.db'))
+    except Error as e:
+        log(logging.ERROR, f"SQLite3: error {e} occurred")
+    return connection
 
 def db_run_query(query: Text, *params: Tuple, read: bool = False):
     connect = db_connect()
@@ -258,6 +261,7 @@ def db_run_query(query: Text, *params: Tuple, read: bool = False):
         raise
     finally:
         cursor.close()
+        #connect.close()
 
 def db_create():
     query = "CREATE TABLE IF NOT EXISTS messages (tid INTEGER PRIMARY KEY, zid INTEGER)"
@@ -361,8 +365,7 @@ else:
 
 # To be able to send a 'PATCH' API request (i.e., edit a message), we need a mapping between Telegram's message_id and Zulip's
 # We store (telegram_msg_id, zulip_msg_id) in a SQL db
-# Make sure writing asyncronously to db is thread-safe
-LOCAL = threading.local()
+# 'db_name' can be specified in the [db] section of the config file
 db_create()
 
 # Zulip allows a message to be edited only if it's not older than 60 minutes
