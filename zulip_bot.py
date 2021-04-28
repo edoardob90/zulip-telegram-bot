@@ -18,6 +18,7 @@ import re
 import sys
 import logging
 import datetime
+import time
 import sqlite3
 from sqlite3 import Error, Connection
 from json import load
@@ -31,6 +32,10 @@ from telegram import Update, ForceReply, File, Message, MessageEntity
 from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
 
 import zulip
+
+###########
+#  Utils  #
+###########
 
 # Log an event and save it in a file with current date as name if enabled
 def log(severity, msg):
@@ -60,6 +65,10 @@ def log(severity, msg):
 
     # The actual logging
     logger.log(severity, msg)
+
+def int_time(timestamp: datetime.datetime) -> int:
+    """Return an integer timesteamp from a datetime object"""
+    return int(time.mktime(timestamp.timetuple()))
 
 ###########
 #  Zulip  #
@@ -123,7 +132,7 @@ def zulip_api_request(stream: Text,
     if not is_edit:
         result = zulip_client.send_message(request)
         if check_response(result):
-            db_add_id(message_id, result['id'])
+            db_add_id(message_id, result['id'], int_time(date))
     else:
         if (date + _60min_delta) >= datetime.datetime.now().astimezone(local_tz):
             check_response(
@@ -134,7 +143,8 @@ def zulip_api_request(stream: Text,
             )
         else:
             log(logging.WARNING, f"User {sender_name} tried to edit a message older than 60 minutes. Zulip doesn't allow such edits.")
-
+            log(logging.WARNING, f"Removing Telegram message with id {message_id} from the database.")
+            db_remove_id(message_id)
 
 def check_response(result: Dict) -> bool:
     if result['result'] != 'success':
@@ -184,21 +194,26 @@ def process_message(update: Update, context: CallbackContext) -> None:
     # FIXME: this syntax is not very elegant. There must be a better way to write it!
     original_msg = message.reply_to_message if message.reply_to_message else None
 
-    # Does the message contain a @mention (or more than one)?
+    # Does the message or caption contain a @mention (or more than one)?
     mentioned_users = []
-    if message.entities and users_mapping:
-        for entity in message.entities:
-            if entity.type == 'text_mention':
-                # This is a full-name (or first name) mention
-                mentioned_users.append(f"@_**{users_mapping[entity.user.first_name]}**")
-            elif entity.type == 'mention':
-                # If a user has set a @username, the entity doesn't bear a telegram.User object
-                _text = message.caption if message.caption else message.text
-                match = re.search(r'@([\w\d]+)', _text)
-                if match:
-                    _user = match.group(1)
-                    if _user in users_mapping:
-                        mentioned_users.append(f"@_**{users_mapping[_user]}**")
+    if not users_mapping:
+        log(logging.WARNING, "Cannot forward message/caption @-mentions without a users mapping file. Check your config.")
+    else:
+        entities = message.caption_entities if message.caption_entities else message.entities
+        if entities:
+            for entity in entities:
+                if entity.type == 'text_mention':
+                    # This is a full-name (or first name) mention
+                    mentioned_users.append(f"@_**{users_mapping[entity.user.first_name]}**")
+                elif entity.type == 'mention':
+                    # If a user has set a @username, the entity doesn't bear a telegram.User object
+                    # Use a regex to find any @-mention which will be present verbatin in message's text
+                    _text = message.caption if message.caption else message.text
+                    match = re.search(r'@([\w\d]+)', _text)
+                    if match:
+                        _user = match.group(1)
+                        if _user in users_mapping:
+                            mentioned_users.append(f"@_**{users_mapping[_user]}**")
 
     if message.text:
         # text-only message
@@ -270,14 +285,18 @@ def db_run_query(query: Text, *params: Tuple, read: bool = False):
         #connect.close()
 
 def db_create():
-    query = "CREATE TABLE IF NOT EXISTS messages (tid INTEGER PRIMARY KEY, zid INTEGER)"
+    query = "CREATE TABLE IF NOT EXISTS messages (tid INTEGER PRIMARY KEY, zid INTEGER, timestamp INTEGER)"
     db_run_query(query)
 
-def db_add_id(telegram_msg_id: int, zulip_msg_id: int) -> None:
-    query = "INSERT OR IGNORE INTO messages VALUES (?, ?)"
+def db_add_id(telegram_msg_id: int, zulip_msg_id: int, timestamp: int) -> None:
+    query = "INSERT OR IGNORE INTO messages VALUES (?, ?, ?)"
     db_run_query(query, telegram_msg_id, zulip_msg_id)
 
-def db_find_id(telegram_msg_id: int):
+def db_remove_id(telegram_msg_id: int) -> None:
+    query = "DELETE FROM messages WHERE tid=?"
+    db_run_query(query, telegram_msg_id)
+
+def db_find_id(telegram_msg_id: int) -> int:
     query = "SELECT zid FROM messages WHERE tid=?"
     return db_run_query(query, telegram_msg_id, read=True)
     
