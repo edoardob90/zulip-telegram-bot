@@ -39,6 +39,7 @@ import zulip
 
 # Log an event and save it in a file with current date as name if enabled
 def log(severity, msg):
+    """A wrapper logging function"""
     # Check if logging is enabled
     if log_level == 0:
         return
@@ -80,7 +81,7 @@ def zulip_api_request(stream: Text,
                 is_edit: Optional[bool] = False,
                 attachment_url: Optional[Text] = None,
                 mentions: Optional[List] = None) -> None:
-    """Construct the request dict to send to Zulip"""
+    """Process a message update from Telegram and construct the request to send to Zulip via the API"""
 
     # Message properties
     date = content[0].date.astimezone(local_tz)
@@ -290,7 +291,7 @@ def db_create():
 
 def db_add_id(telegram_msg_id: int, zulip_msg_id: int, timestamp: int) -> None:
     query = "INSERT OR IGNORE INTO messages VALUES (?, ?, ?)"
-    db_run_query(query, telegram_msg_id, zulip_msg_id)
+    db_run_query(query, telegram_msg_id, zulip_msg_id, timestamp)
 
 def db_remove_id(telegram_msg_id: int) -> None:
     query = "DELETE FROM messages WHERE tid=?"
